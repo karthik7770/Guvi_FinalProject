@@ -1,0 +1,39 @@
+public class GroupedRecordItemReader implements ItemReader<GroupedRecord> {
+    private final JdbcTemplate jdbcTemplate;
+    private List<GroupedRecord> groupedRecords;
+    private int nextIndex;
+
+    public GroupedRecordItemReader(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.nextIndex = 0;
+    }
+
+    @Override
+    public GroupedRecord read() {
+        if (groupedRecords == null) {
+            groupedRecords = fetchGroupedRecords();
+        }
+        if (nextIndex < groupedRecords.size()) {
+            return groupedRecords.get(nextIndex++);
+        }
+        return null; // end of reading
+    }
+
+    private List<GroupedRecord> fetchGroupedRecords() {
+        List<Record> records = jdbcTemplate.query("SELECT * FROM your_table ORDER BY recId", new RecordRowMapper());
+        Map<String, GroupedRecord> groupedRecordMap = new LinkedHashMap<>();
+        for (Record record : records) {
+            groupedRecordMap
+                .computeIfAbsent(record.getRecId(), k -> new GroupedRecord(k, new ArrayList<>()))
+                .getRecords()
+                .add(record);
+        }
+        return new ArrayList<>(groupedRecordMap.values());
+    }
+}
+public class GroupedRecord {
+    private String recId;
+    private List<Record> records;
+
+    // getters and setters
+}
