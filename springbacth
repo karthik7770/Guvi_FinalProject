@@ -1,0 +1,111 @@
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.item.database.JdbcPagingItemReader;
+import org.springframework.batch.item.database.PagingQueryProvider;
+import org.springframework.batch.item.database.support.H2PagingQueryProvider;
+import org.springframework.batch.item.support.ClassifierCompositeItemProcessor;
+import org.springframework.batch.item.support.ListItemReader;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.core.BeanPropertyRowMapper;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+
+import javax.sql.DataSource;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
+@Configuration
+@EnableBatchProcessing
+public class BatchConfig {
+
+    @Autowired
+    private JobBuilderFactory jobBuilderFactory;
+
+    @Autowired
+    private StepBuilderFactory stepBuilderFactory;
+
+    @Autowired
+    private DataSource dataSource;
+
+    @Bean
+    public JdbcPagingItemReader<Long> reader() {
+        JdbcPagingItemReader<Long> reader = new JdbcPagingItemReader<>();
+        reader.setDataSource(dataSource);
+        reader.setPageSize(10);
+        reader.setRowMapper(new BeanPropertyRowMapper<>(Long.class));
+
+        PagingQueryProvider queryProvider = createQueryProvider();
+        reader.setQueryProvider(queryProvider);
+
+        return reader;
+    }
+
+    private PagingQueryProvider createQueryProvider() {
+        H2PagingQueryProvider queryProvider = new H2PagingQueryProvider();
+        queryProvider.setSelectClause("SELECT id");
+        queryProvider.setFromClause("FROM ids");
+        queryProvider.setSortKeys(Collections.singletonMap("id", PagingQueryProvider.SortKeyDirection.ASCENDING));
+        return queryProvider;
+    }
+
+    @Bean
+    public ItemProcessor<List<Long>, List<Long>> processor() {
+        return items -> {
+            // Process the list of IDs (e.g., filtering, transformation, etc.)
+            return items; // For simplicity, we just return the same list
+        };
+    }
+
+    @Bean
+    public ItemWriter<List<Long>> writer() {
+        return items -> {
+            // Write the processed data (e.g., save to database, send to another service, etc.)
+            items.forEach(System.out::println);
+        };
+    }
+
+    @Bean
+    public Job job(Step step) {
+        return jobBuilderFactory.get("job")
+                .incrementer(new RunIdIncrementer())
+                .start(step)
+                .build();
+    }
+
+    @Bean
+    public Step step(JdbcPagingItemReader<Long> reader, 
+                     ItemProcessor<List<Long>, List<Long>> processor,
+                     ItemWriter<List<Long>> writer) {
+        return stepBuilderFactory.get("step")
+                .<Long, Long>chunk(10)
+                .reader(reader)
+                .processor(new ListItemProcessorWrapper(processor))
+                .writer(writer)
+                .build();
+    }
+
+    static class ListItemProcessorWrapper implements ItemProcessor<Long, List<Long>> {
+        private final ItemProcessor<List<Long>, List<Long>> delegate;
+        private List<Long> list = new ArrayList<>();
+
+        ListItemProcessorWrapper(ItemProcessor<List<Long>, List<Long>> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public List<Long> process(Long item) throws Exception {
+            list.add(item);
+            if (list.size() == 10) {
+                List<Long> processedList = delegate.process(list);
+                list = new ArrayList<>();
+                return processedList;
+            }
+            return null;
+        }
+    }
+}
