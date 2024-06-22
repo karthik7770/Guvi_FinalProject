@@ -125,3 +125,83 @@ public class BatchConfiguration {
                 .build();
     }
 }
+import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.database.JdbcPagingItemReader;
+import org.springframework.beans.factory.annotation.Autowired;
+
+public class CustomJdbcPagingItemReader implements ItemReader<MyItem> {
+
+    private final JdbcPagingItemReader<MyItem> jdbcPagingItemReader;
+
+    @Autowired
+    public CustomJdbcPagingItemReader(JdbcPagingItemReader<MyItem> jdbcPagingItemReader) {
+        this.jdbcPagingItemReader = jdbcPagingItemReader;
+    }
+
+    @Override
+    public MyItem read() throws Exception {
+        return jdbcPagingItemReader.read();
+    }
+}
+@Configuration
+public class BatchConfiguration {
+
+    @Bean
+    @StepScope
+    public JdbcPagingItemReader<MyItem> jdbcPagingItemReader(
+            @Value("#{jobParameters['recIdStrt']}") String recIdStrt,
+            @Value("#{jobParameters['recIdEnd']}") String recIdEnd,
+            @Value("#{jobParameters['totalModVal']}") String totalModVal,
+            @Value("#{jobParameters['currentModVal']}") String currentModVal,
+            DataSource dataSource) {
+        
+        JdbcPagingItemReader<MyItem> reader = new JdbcPagingItemReader<>();
+        reader.setDataSource(dataSource);
+        reader.setPageSize(10);
+        
+        String sql = "SELECT * FROM my_table WHERE rec_id >= :recIdStrt AND rec_id <= :recIdEnd " +
+                     "AND MOD(total_value, :totalModVal) = :currentModVal";
+        reader.setRowMapper(new MyItemRowMapper());
+        
+        MySqlPagingQueryProvider queryProvider = new MySqlPagingQueryProvider();
+        queryProvider.setSelectClause("SELECT *");
+        queryProvider.setFromClause("FROM my_table");
+        queryProvider.setWhereClause("WHERE rec_id >= :recIdStrt AND rec_id <= :recIdEnd " +
+                                     "AND MOD(total_value, :totalModVal) = :currentModVal");
+
+        Map<String, Object> parameterValues = new HashMap<>();
+        parameterValues.put("recIdStrt", recIdStrt);
+        parameterValues.put("recIdEnd", recIdEnd);
+        parameterValues.put("totalModVal", totalModVal);
+        parameterValues.put("currentModVal", currentModVal);
+        reader.setParameterValues(parameterValues);
+        reader.setQueryProvider(queryProvider);
+
+        return reader;
+    }
+
+    @Bean
+    @StepScope
+    public CustomJdbcPagingItemReader customItemReader(JdbcPagingItemReader<MyItem> jdbcPagingItemReader) {
+        return new CustomJdbcPagingItemReader(jdbcPagingItemReader);
+    }
+
+    @Bean
+    public Job importUserJob(JobBuilderFactory jobs, Step step1) {
+        return jobs.get("importUserJob")
+                .incrementer(new RunIdIncrementer())
+                .flow(step1)
+                .end()
+                .build();
+    }
+
+    @Bean
+    public Step step1(StepBuilderFactory stepBuilderFactory, CustomJdbcPagingItemReader customItemReader, ItemProcessor<MyItem, MyItem> processor, ItemWriter<MyItem> writer) {
+        return stepBuilderFactory.get("step1")
+                .<MyItem, MyItem>chunk(10)
+                .reader(customItemReader)
+                .processor(processor)
+                .writer(writer)
+                .build();
+    }
+}
