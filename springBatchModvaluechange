@@ -1,0 +1,127 @@
+public class JobRequest {
+    private String recIdStrt;
+    private String recIdEnd;
+    private String totalModVal;
+    private String currentModVal;
+
+    // Getters and setters
+    public String getRecIdStrt() {
+        return recIdStrt;
+    }
+
+    public void setRecIdStrt(String recIdStrt) {
+        this.recIdStrt = recIdStrt;
+    }
+
+    public String getRecIdEnd() {
+        return recIdEnd;
+    }
+
+    public void setRecIdEnd(String recIdEnd) {
+        this.recIdEnd = recIdEnd;
+    }
+
+    public String getTotalModVal() {
+        return totalModVal;
+    }
+
+    public void setTotalModVal(String totalModVal) {
+        this.totalModVal = totalModVal;
+    }
+
+    public String getCurrentModVal() {
+        return currentModVal;
+    }
+
+    public void setCurrentModVal(String currentModVal) {
+        this.currentModVal = currentModVal;
+    }
+}
+@RestController
+@RequestMapping("/jobs")
+public class JobController {
+
+    private final JobLauncher jobLauncher;
+    private final Job job;
+
+    @Autowired
+    public JobController(JobLauncher jobLauncher, Job job) {
+        this.jobLauncher = jobLauncher;
+        this.job = job;
+    }
+
+    @PostMapping("/run")
+    public ResponseEntity<String> runJob(@RequestBody JobRequest jobRequest) {
+        try {
+            JobParameters jobParameters = new JobParametersBuilder()
+                    .addString("recIdStrt", jobRequest.getRecIdStrt())
+                    .addString("recIdEnd", jobRequest.getRecIdEnd())
+                    .addString("totalModVal", jobRequest.getTotalModVal())
+                    .addString("currentModVal", jobRequest.getCurrentModVal())
+                    .addLong("time", System.currentTimeMillis())
+                    .toJobParameters();
+            jobLauncher.run(job, jobParameters);
+            return ResponseEntity.ok("Job executed successfully");
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Job execution failed");
+        }
+    }
+}
+@Configuration
+public class BatchConfiguration {
+
+    @Bean
+    @StepScope
+    public JdbcPagingItemReader<MyItem> reader(
+            @Value("#{jobParameters['recIdStrt']}") String recIdStrt,
+            @Value("#{jobParameters['recIdEnd']}") String recIdEnd,
+            @Value("#{jobParameters['totalModVal']}") String totalModVal,
+            @Value("#{jobParameters['currentModVal']}") String currentModVal,
+            DataSource dataSource) {
+        
+        JdbcPagingItemReader<MyItem> reader = new JdbcPagingItemReader<>();
+        reader.setDataSource(dataSource);
+        reader.setPageSize(10);
+        
+        // Configure the SQL query using the parameters
+        String sql = "SELECT * FROM my_table WHERE rec_id >= :recIdStrt AND rec_id <= :recIdEnd " +
+                     "AND MOD(total_value, :totalModVal) = :currentModVal";
+        reader.setRowMapper(new MyItemRowMapper());
+        
+        // Set up the query provider with the parameters
+        MySqlPagingQueryProvider queryProvider = new MySqlPagingQueryProvider();
+        queryProvider.setSelectClause("SELECT *");
+        queryProvider.setFromClause("FROM my_table");
+        queryProvider.setWhereClause("WHERE rec_id >= :recIdStrt AND rec_id <= :recIdEnd " +
+                                     "AND MOD(total_value, :totalModVal) = :currentModVal");
+
+        Map<String, Object> parameterValues = new HashMap<>();
+        parameterValues.put("recIdStrt", recIdStrt);
+        parameterValues.put("recIdEnd", recIdEnd);
+        parameterValues.put("totalModVal", totalModVal);
+        parameterValues.put("currentModVal", currentModVal);
+        reader.setParameterValues(parameterValues);
+        reader.setQueryProvider(queryProvider);
+
+        return reader;
+    }
+
+    @Bean
+    public Job importUserJob(JobBuilderFactory jobs, Step step1) {
+        return jobs.get("importUserJob")
+                .incrementer(new RunIdIncrementer())
+                .flow(step1)
+                .end()
+                .build();
+    }
+
+    @Bean
+    public Step step1(StepBuilderFactory stepBuilderFactory, JdbcPagingItemReader<MyItem> reader, ItemProcessor<MyItem, MyItem> processor, ItemWriter<MyItem> writer) {
+        return stepBuilderFactory.get("step1")
+                .<MyItem, MyItem>chunk(10)
+                .reader(reader)
+                .processor(processor)
+                .writer(writer)
+                .build();
+    }
+}
