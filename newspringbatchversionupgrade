@@ -1,0 +1,20 @@
+	@Bean
+	public Job pdtLocationJob() throws Exception {
+		return jobBuilderFactory.get("pdtLocationJob").incrementer(new RunIdIncrementer()).start(locationDataFromDB())
+				.listener(customJobListener())
+				.build();
+	}
+	@SuppressWarnings("unchecked")
+	@Bean
+	public Step locationDataFromDB() throws Exception {
+		SimpleStepBuilder<TrgrResponse, TrgrResponse> builder = ((SimpleStepBuilder<TrgrResponse, TrgrResponse>) stepBuilderFactory
+				.get("fromFileIntoDatabase").<TrgrResponse, TrgrResponse>chunk(chunksize).reader(pdtProvLocReader)
+				.processor(pdtProvLocProcessor.asyncItemProcessor()).writer(pdtProvLocWriter.asyncItemWriter())
+				.taskExecutor(new SimpleAsyncTaskExecutor()).transactionManager(getTransactionManager()))
+				.faultTolerant() 
+                .skip(Exception.class) 
+                .skipLimit(Integer.MAX_VALUE).taskExecutor(pdtExecuter)
+                .throttleLimit(8).
+                listener(skipListener());
+		return builder.build();
+	}
