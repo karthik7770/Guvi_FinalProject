@@ -41,3 +41,13 @@ public class GroupedRecord {
 //WHERE JOB_NAME = ?
 // and JOB_KEY = ?]
 }
+SimpleStepBuilder<TrgrResponse, TrgrResponse> builder = ((SimpleStepBuilder<TrgrResponse, TrgrResponse>) stepBuilderFactory
+				.get("fromFileIntoDatabase").<TrgrResponse, TrgrResponse>chunk(chunksize)
+				.reader(pdtProvLocReader)
+				.processor(pdtProvLocProcessor.asyncItemProcessor())
+				.writer(pdtProvLocWriter.asyncItemWriter())
+				.taskExecutor(new SimpleAsyncTaskExecutor()).transactionManager(getTransactionManager()))
+				.faultTolerant()                .skip(Exception.class) 
+                .skipLimit(Integer.MAX_VALUE).taskExecutor(pdtExecuter)
+                .throttleLimit(8).
+                listener(skipListener());
