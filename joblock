@@ -1,0 +1,40 @@
+@Component
+public class JobScheduler {
+
+    @Autowired
+    private JobLauncher jobLauncher;
+
+    @Autowired
+    private Job dynamicJob;
+
+    @Autowired
+    private JobExplorer jobExplorer;
+
+    @Scheduled(cron = "0 */5 * * * ?")
+    public void runDynamicJob() {
+        if (isJobRunning("dynamicJob")) {
+            System.out.println("Job is already running, skipping this schedule.");
+            return;
+        }
+
+        try {
+            jobLauncher.run(dynamicJob, new JobParameters());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private boolean isJobRunning(String jobName) {
+        List<JobInstance> jobInstances = jobExplorer.getJobInstances(jobName, 0, 1);
+        if (!jobInstances.isEmpty()) {
+            JobInstance lastInstance = jobInstances.get(0);
+            List<JobExecution> jobExecutions = jobExplorer.getJobExecutions(lastInstance);
+            for (JobExecution jobExecution : jobExecutions) {
+                if (jobExecution.isRunning()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
