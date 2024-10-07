@@ -41,6 +41,21 @@ public class GroupedRecord {
 //WHERE JOB_NAME = ?
 // and JOB_KEY = ?]
 }
+@Bean
+	public Job mainJob(JobRepository jobRepository,
+	@Qualifier("pdtTransactionManager") PlatformTransactionManager pdtTransactionManager) throws Exception {
+		JobBuilder jobBuilder = new JobBuilder("mainJob", jobRepository);
+		return jobBuilder.incrementer(new RunIdIncrementer())
+ 
+				.start(provLocationStep(jobRepository, pdtTransactionManager)).on("COMPLETED").to(healthCareServiceStep(jobRepository, pdtTransactionManager))
+				.from(healthCareServiceStep(jobRepository, pdtTransactionManager)).on("COMPLETED").to(healthCareService2Step(jobRepository,pdtTransactionManager))
+				.from(healthCareService2Step(jobRepository,pdtTransactionManager)).on("COMPLETED").to(qualificationEntityStep(jobRepository, pdtTransactionManager))
+				.from(qualificationEntityStep(jobRepository, pdtTransactionManager)).on("COMPLETED").to(organizationStep(jobRepository,pdtTransactionManager))
+				.from(organizationStep(jobRepository, pdtTransactionManager)).on("COMPLETED").to(practionerStep(jobRepository, pdtTransactionManager))
+				.from(practionerStep(jobRepository,pdtTransactionManager)).on("COMPLETED").to(provOrgAffiliationStep(jobRepository, pdtTransactionManager))
+				.from(provOrgAffiliationStep(jobRepository, pdtTransactionManager)).on("COMPLETED").to(practionerRoleStep(jobRepository, pdtTransactionManager))
+				.from(practionerRoleStep(jobRepository, pdtTransactionManager)).end().build();
+	}
 SimpleStepBuilder<TrgrResponse, TrgrResponse> builder = ((SimpleStepBuilder<TrgrResponse, TrgrResponse>) stepBuilderFactory
 				.get("fromFileIntoDatabase").<TrgrResponse, TrgrResponse>chunk(chunksize)
 				.reader(pdtProvLocReader)
