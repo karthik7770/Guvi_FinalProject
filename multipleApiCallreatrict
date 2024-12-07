@@ -1,0 +1,33 @@
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.concurrent.ConcurrentHashMap;
+
+@RestController
+public class MyController {
+
+    // A map to track names being processed
+    private final ConcurrentHashMap<String, Boolean> processingNames = new ConcurrentHashMap<>();
+
+    @PostMapping("/process")
+    public ResponseEntity<String> process(@RequestParam String name) {
+        // Check if the name is already being processed
+        if (processingNames.putIfAbsent(name, true) != null) {
+            return ResponseEntity.status(429).body("The name '" + name + "' is already being processed. Please try again later.");
+        }
+
+        try {
+            // Simulate processing
+            System.out.println("Processing name: " + name);
+            Thread.sleep(5000); // Simulate long-running task
+            return ResponseEntity.ok("Processed name: " + name);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return ResponseEntity.status(500).body("An error occurred while processing.");
+        } finally {
+            // Remove the name from the map after processing
+            processingNames.remove(name);
+            System.out.println("Finished processing name: " + name);
+        }
+    }
+}
